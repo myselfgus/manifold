@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>VDLP Manifold — WebGPU / TSL</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+  #hud{position:fixed;top:12px;left:12px;z-index:10;background:rgba(13,17,23,.72);
+       border:1px solid #30363d;border-radius:10px;padding:12px 14px;max-width:330px;
+       backdrop-filter:blur(6px);font-size:13px;line-height:1.55}
+  #hud h1{margin:0 0 6px;font-size:15px;color:#58a6ff}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .low{background:#132e1a;color:#3fb950;border:1px solid #238636}
+  .high{background:#3a1416;color:#f85149;border:1px solid #da3633}
+  .gpu{background:#12233a;color:#58a6ff;border:1px solid #1f6feb}
+  .warn{margin-top:8px;font-size:11px;color:#8b949e;border-top:1px solid #30363d;padding-top:8px}
+  #ctrl{position:fixed;bottom:12px;left:12px;z-index:10;background:rgba(13,17,23,.72);
+        border:1px solid #30363d;border-radius:10px;padding:8px 12px;font-size:12px}
+  label{margin-right:14px;cursor:pointer}
+  #fps{position:fixed;top:12px;right:12px;z-index:10;font-variant-numeric:tabular-nums;
+       background:rgba(13,17,23,.72);border:1px solid #30363d;border-radius:8px;padding:6px 10px;font-size:12px}
+</style>
+</head>
+<body>
+<div id="hud">
+  <h1>VDLP Manifold — WebGPU/TSL</h1>
+  <div>backend: <span id="backend" class="badge gpu">…</span></div>
+  <div>embedding: <b id="method">—</b></div>
+  <div>incerteza: <span id="unc" class="badge">—</span></div>
+  <div style="margin-top:6px">★ bacias GEM &nbsp; <span style="color:#22d3ee">━</span> geodésica</div>
+  <div class="warn">Deslocamento + cor viridis + pulso de difusão computados
+  na GPU (TSL). Hipótese de design, NÃO diagnóstico. Drill-down reancora na
+  fala literal do paciente (ASL).</div>
+</div>
+<div id="ctrl">
+  <label><input type="checkbox" id="wire"> wireframe</label>
+  <label><input type="checkbox" id="spin" checked> girar</label>
+  <label><input type="checkbox" id="pulse" checked> pulso difusão</label>
+  <label>altura <input type="range" id="hscale" min="0.2" max="2.5" step="0.1" value="1.0"></label>
+</div>
+<div id="fps">-- fps</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.170.0/build/three.webgpu.js",
+  "three/tsl": "https://unpkg.com/three@0.170.0/build/three.webgpu.js",
+  "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import {
+  Fn, attribute, positionLocal, uniform, vec2, vec3, float,
+  mix, smoothstep, sin, abs, fract, clamp, length, max, min
+} from 'three/tsl';
+
+const DATA = __DATA__;
+document.getElementById('method').textContent = DATA.method;
+const uncEl = document.getElementById('unc');
+uncEl.textContent = DATA.uncertainty.toUpperCase();
+uncEl.className = 'badge ' + (DATA.uncertainty === 'baixa' ? 'low' : 'high');
+
+const N = DATA.grid;                 // 128
+const Z = DATA.z;                    // Float array N*N, row-major (row=y,col=x)
+const PLANE = 3.0;                   // extensão do plano em unidades de cena
+
+// ---------------------------------------------------------------- cena/render
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1117);
+scene.fog = new THREE.FogExp2(0x0d1117, 0.055);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(2.7, 2.5, 2.7);
+
+const renderer = new THREE.WebGPURenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+await renderer.init();               // WebGPU inicializa async (cai p/ WebGL2 se preciso)
+
+const beEl = document.getElementById('backend');
+const isWGPU = !!(renderer.backend && renderer.backend.isWebGPUBackend);
+beEl.textContent = isWGPU ? 'WebGPU' : 'WebGL2 (fallback)';
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0x88aaff, 0x111122, 0.9));
+const dir = new THREE.DirectionalLight(0xffffff, 1.15);
+dir.position.set(3, 5, 2); scene.add(dir);
+
+// ---------------------------------------------------------------- geometria
+// PlaneGeometry: vértices em ordem iy*N+ix  ==  Z[row*N+col]. Casa 1:1.
+const geo = new THREE.PlaneGeometry(PLANE, PLANE, N-1, N-1);
+
+// atributo de altura 'zval' -> lido no shader (TSL) para deslocar/coloring
+const zval = new Float32Array(N*N);
+for (let i=0;i<N*N;i++) zval[i] = Z[i] || 0;
+geo.setAttribute('zval', new THREE.BufferAttribute(zval, 1));
+
+// normais coerentes com a superfície deslocada (recomputadas p/ hScale)
+const normals = geo.attributes.normal.array;
+function recomputeNormals(hScale){
+  const dx = PLANE / (N-1);
+  for (let r=0;r<N;r++){
+    for (let c=0;c<N;c++){
+      const i = r*N+c;
+      const zl = (Z[r*N + Math.max(c-1,0)]   || 0);
+      const zr = (Z[r*N + Math.min(c+1,N-1)] || 0);
+      const zd = (Z[Math.max(r-1,0)*N + c]   || 0);
+      const zu = (Z[Math.min(r+1,N-1)*N + c] || 0);
+      const nx = -(zr - zl) * hScale / (2*dx);
+      const ny = -(zu - zd) * hScale / (2*dx);
+      const nz = 1.0;
+      const inv = 1.0 / Math.hypot(nx,ny,nz);
+      normals[i*3+0]=nx*inv; normals[i*3+1]=ny*inv; normals[i*3+2]=nz*inv;
+    }
+  }
+  geo.attributes.normal.needsUpdate = true;
+}
+recomputeNormals(1.0);
+
+// ---------------------------------------------------------------- TSL material
+const uHeight = uniform(1.0);        // escala de altura (slider)
+const uTime   = uniform(0.0);        // tempo (pulso difusão)
+const uPulse  = uniform(1.0);        // liga/desliga pulso
+
+const zAttr = attribute('zval', 'float');
+
+// viridis via aproximação polinomial (6 termos) — roda na GPU
+const viridis = Fn(([t]) => {
+  const c0 = vec3( 0.2777,  0.0054,  0.3341);
+  const c1 = vec3( 0.1050,  1.4046,  1.3845);
+  const c2 = vec3(-0.3308,  0.2148,  0.0956);
+  const c3 = vec3(-4.6342, -5.7991, -19.3324);
+  const c4 = vec3( 6.2282, 14.1799,  56.6906);
+  const c5 = vec3( 4.7763,-13.7451, -65.3532);
+  const c6 = vec3(-5.4354,  4.6456,  26.3125);
+  const x  = clamp(t, 0.0, 1.0);
+  // Horner: c0 + x*(c1 + x*(c2 + x*(c3 + x*(c4 + x*(c5 + x*c6)))))
+  const h5 = c5.add(x.mul(c6));
+  const h4 = c4.add(x.mul(h5));
+  const h3 = c3.add(x.mul(h4));
+  const h2 = c2.add(x.mul(h3));
+  const h1 = c1.add(x.mul(h2));
+  return c0.add(x.mul(h1));
+});
+
+const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.72, metalness: 0.04 });
+
+// --- VERTEX: desloca ao longo do Z local pela altura (na GPU)
+mat.positionNode = positionLocal.add(vec3(0.0, 0.0, zAttr.mul(uHeight)));
+
+// --- FRAGMENT: viridis(altura) + linhas de contorno + pulso de difusão radial
+mat.colorNode = Fn(() => {
+  const h = zAttr;
+  let col = viridis(h);
+  // contornos finos a cada ~1/12 de altura
+  const band = abs(fract(h.mul(12.0)).sub(0.5));
+  const contour = smoothstep(0.0, 0.06, band);
+  col = mix(col.mul(1.45), col, contour);      // realça as isolinhas
+  // pulso de difusão: onda que emana do centro do manifold
+  const d = length(positionLocal.xy).div(PLANE*0.5);
+  const wave = sin(d.mul(26.0).sub(uTime.mul(2.2)));
+  const ring = smoothstep(0.55, 1.0, wave).mul(uPulse).mul(0.35);
+  col = col.add(vec3(0.10, 0.55, 0.75).mul(ring).mul(h.add(0.15)));
+  return col;
+})();
+
+const mesh = new THREE.Mesh(geo, mat);
+mesh.rotation.x = -Math.PI/2;        // deita o plano no XZ
+scene.add(mesh);
+
+// ---------------------------------------------------------------- helpers pos
+// local (px,py,height) do plano -> mundo após rotação -90° em X: (px, h, -py)
+function gridToWorld(r, c, srcN){
+  const px = (c/(srcN-1))*PLANE - PLANE/2;
+  const py = (r/(srcN-1))*PLANE - PLANE/2;
+  return [px, py];
+}
+function heightAt(r, c, srcN){
+  const rr = Math.round(r/(srcN-1)*(N-1));
+  const cc = Math.round(c/(srcN-1)*(N-1));
+  return (Z[rr*N+cc]||0);
+}
+
+// ---------------------------------------------------------------- bacias GEM ★
+const peakGroup = new THREE.Group();
+for (const [r,c] of DATA.peaks){
+  const [px,py] = gridToWorld(r,c,DATA.peaks_src_grid);
+  const h = heightAt(r,c,DATA.peaks_src_grid)*uHeight.value + 0.05;
+  const s = new THREE.Mesh(
+    new THREE.SphereGeometry(0.05, 18, 18),
+    new THREE.MeshStandardNodeMaterial({ color: 0xff5a5a, emissive: 0x661515, roughness:0.4 })
+  );
+  s.position.set(px, h, -py);
+  s.userData = {r, c, src: DATA.peaks_src_grid};
+  peakGroup.add(s);
+}
+scene.add(peakGroup);
+
+// ---------------------------------------------------------------- geodésica ━
+let tube = null, tubePts = [];
+if (DATA.geodesic.length > 1){
+  tubePts = DATA.geodesic.map(([r,c]) => {
+    const [px,py] = gridToWorld(r,c,DATA.geo_src_grid);
+    return new THREE.Vector3(px, heightAt(r,c,DATA.geo_src_grid)*uHeight.value + 0.03, -py);
+  });
+  buildTube();
+}
+function buildTube(){
+  if (tube){ scene.remove(tube); tube.geometry.dispose(); }
+  const curve = new THREE.CatmullRomCurve3(tubePts);
+  tube = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 220, 0.014, 8, false),
+    new THREE.MeshStandardNodeMaterial({ color: 0x22d3ee, emissive: 0x0a5560, roughness:0.3 })
+  );
+  scene.add(tube);
+}
+
+// ---------------------------------------------------------------- UI
+document.getElementById('wire').onchange  = e => { mat.wireframe = e.target.checked; };
+let SPIN = true;
+document.getElementById('spin').onchange  = e => { SPIN = e.target.checked; };
+document.getElementById('pulse').onchange = e => { uPulse.value = e.target.checked ? 1.0 : 0.0; };
+document.getElementById('hscale').oninput = e => {
+  const hs = parseFloat(e.target.value);
+  uHeight.value = hs;                 // desloca na GPU
+  recomputeNormals(hs);               // normais coerentes na CPU (128² barato)
+  // reposiciona bacias e geodésica
+  peakGroup.children.forEach(s => {
+    const {r,c,src} = s.userData;
+    s.position.y = heightAt(r,c,src)*hs + 0.05;
+  });
+  if (tube){
+    tubePts.forEach((p, i) => {
+      const [r,c] = DATA.geodesic[i];
+      p.y = heightAt(r,c,DATA.geo_src_grid)*hs + 0.03;
+    });
+    buildTube();
+  }
+};
+
+// ---------------------------------------------------------------- loop
+const fpsEl = document.getElementById('fps');
+let last = performance.now(), acc = 0, frames = 0;
+renderer.setAnimationLoop(async (now) => {
+  const dt = now - last; last = now; acc += dt; frames++;
+  if (acc >= 500){ fpsEl.textContent = (1000*frames/acc).toFixed(0) + ' fps'; acc = 0; frames = 0; }
+  uTime.value = now * 0.001;
+  if (SPIN) scene.rotation.y += dt * 0.00022;
+  controls.update();
+  await renderer.renderAsync(scene, camera);
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

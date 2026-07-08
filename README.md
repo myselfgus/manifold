@@ -32,6 +32,9 @@
   - [5. Export e rendering](#5-export-e-rendering)
 - [Arquitetura de rendering](#arquitetura-de-rendering)
 - [Validações](#validações)
+  - [Fundamentação científica dos métodos](#fundamentação-científica-dos-métodos)
+  - [Validação de software](#validação-de-software)
+  - [O que ainda NÃO foi validado](#o-que-ainda-não-foi-validado)
 - [Inovações](#inovações)
 - [Benefícios](#benefícios)
 - [Uso rápido](#uso-rápido)
@@ -335,10 +338,52 @@ flowchart TD
 
 ## Validações
 
-O pipeline é coberto por testes de fumaça rápidos em
+Há **três níveis distintos** de validação, e é fundamental não confundi-los.
+Este projeto se apoia em métodos **cientificamente validados na literatura**;
+o **código** que os implementa é coberto por testes; mas a **aplicação clínica
+a dados VDLP reais ainda não foi validada** — por isso todo resultado é
+*hipótese de design, não diagnóstico*.
+
+```mermaid
+flowchart LR
+    A["<b>1. Fundamentação científica</b><br/>métodos revisados por pares<br/>✅ validados na literatura"]
+    B["<b>2. Validação de software</b><br/>testes do pipeline<br/>✅ código faz o que promete"]
+    C["<b>3. Validação clínica</b><br/>em dados VDLP reais<br/>❌ ainda NÃO realizada"]
+    A --> B --> C
+    style A fill:#0d2818,stroke:#3fb950,color:#e6edf3
+    style B fill:#12233a,stroke:#58a6ff,color:#e6edf3
+    style C fill:#3a1416,stroke:#f85149,color:#e6edf3
+```
+
+### Fundamentação científica dos métodos
+
+Cada etapa do pipeline usa um método **estabelecido e revisado por pares** em
+sua área de origem (aprendizado de manifolds, estatística, morfologia
+matemática, teoria dos grafos). Estas são as referências primárias:
+
+| Método no pipeline | Base científica (peer-reviewed) |
+|--------------------|---------------------------------|
+| **PHATE** (embedding preferido) | Moon, van Dijk, Wang et al. *Visualizing structure and transitions in high-dimensional biological data.* **Nature Biotechnology** 37, 1482–1492 (2019). [doi:10.1038/s41587-019-0336-3](https://doi.org/10.1038/s41587-019-0336-3) |
+| **Diffusion maps** (base teórica do PHATE) | Coifman & Lafon. *Diffusion maps.* **Applied and Computational Harmonic Analysis** 21(1):5–30 (2006). [doi:10.1016/j.acha.2006.04.006](https://doi.org/10.1016/j.acha.2006.04.006) |
+| **UMAP** (fallback, PCA-init) | McInnes, Healy, Melville. *UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction.* **arXiv:1802.03426** (2018). [arxiv.org/abs/1802.03426](https://arxiv.org/abs/1802.03426) |
+| **PCA** (guard-rail / último fallback) | Jolliffe. *Principal Component Analysis.* 2ª ed., **Springer** (2002). |
+| **t-SNE** (contraexemplo: fragmenta trajetória) | van der Maaten & Hinton. *Visualizing Data using t-SNE.* **JMLR** 9:2579–2605 (2008). |
+| **KDE / bandwidth de Scott** (height-field) | Scott. *Multivariate Density Estimation.* **Wiley** (1992); Silverman. *Density Estimation for Statistics and Data Analysis.* **Chapman & Hall** (1986). |
+| **Watershed** (bacias GEM) | Beucher & Lantuéjoul. *Use of Watersheds in Contour Detection.* Int. Workshop on Image Processing, Rennes (1979). |
+| **Dijkstra** (geodésica na grade) | Dijkstra. *A note on two problems in connexion with graphs.* **Numerische Mathematik** 1:269–271 (1959). |
+| **Procrustes / Aligned-UMAP** (roadmap) | Gower. *Generalized Procrustes analysis.* **Psychometrika** 40:33–51 (1975). |
+
+> A escolha de preferir PHATE a t-SNE **não é estética**: o próprio artigo do
+> PHATE demonstra que ele preserva progressões contínuas (trajetórias) melhor
+> que t-SNE, que tende a fragmentá-las em ilhas. É essa propriedade, validada na
+> literatura, que sustenta a leitura da trajetória do paciente como uma curva.
+
+### Validação de software
+
+Isto é **validação de engenharia**, não científica: garante apenas que o código
+implementa corretamente os métodos acima. Testes de fumaça rápidos em
 [`tests/test_pipeline.py`](tests/test_pipeline.py) — que **não dependem** de
-PHATE/UMAP (rodam no CI mais enxuto). Eles verificam justamente as invariantes
-que sustentam a interpretação:
+PHATE/UMAP — verificam as invariantes do pipeline:
 
 | Teste | O que garante |
 |-------|---------------|
@@ -354,13 +399,33 @@ make test        # python -m pytest -q
 make lint        # ruff
 ```
 
-Além dos testes automatizados, a **validação visual** é embutida no design:
+Há ainda uma **verificação visual de sanidade** embutida no design: o embedding
+é colorido por **tempo/sessão** — se a trajetória sintética foi preservada, as
+cores variam suavemente ao longo do arco (painel esquerdo do preview). Isto
+confirma que o *método recupera uma estrutura conhecida*, mas continua sendo
+validação sobre **dados sintéticos**, não sobre pacientes reais.
 
-- o embedding é colorido por **tempo/sessão** — se a trajetória sintética foi
-  preservada, as cores variam **suavemente ao longo do arco** (é o que se vê no
-  painel esquerdo do preview);
-- a **incerteza** é reportada em todo artefato (preview, HUD web, `.npz`),
-  tornando impossível ler o manifold sem ver o nível de confiança.
+### O que ainda NÃO foi validado
+
+Para ser honesto sobre o alcance científico deste projeto:
+
+- **Não há validação clínica.** Nenhum estudo com pacientes reais estabeleceu
+  que as bacias, fluxos ou geodésicas do manifold correspondem a construtos
+  clínicos significativos, nem que têm valor prognóstico ou diagnóstico.
+- **Não há validação do instrumento VDLP** aqui: as 15 dimensões em
+  [`dims.py`](python/vdlp_manifold/dims.py) são **ilustrativas**; a validade
+  psicométrica (confiabilidade, validade de construto) vem do seu instrumento,
+  não deste pacote.
+- **Os dados de exemplo são sintéticos** — servem para testar o software e
+  demonstrar as propriedades dos métodos, não para inferir nada clínico.
+- A **incerteza** é reportada em todo artefato (preview, HUD web, `.npz`) para
+  que nunca se leia o manifold sem ver o nível de confiança — mas incerteza
+  reportada **não substitui** validação clínica prospectiva.
+
+> Em resumo: os **métodos** são cientificamente validados; a **implementação** é
+> testada; a **aplicação a VDLP clínico** é uma hipótese de design a ser
+> validada em estudo próprio. Todo drill-down reancora na **fala literal do
+> paciente (ASL)**.
 
 ---
 

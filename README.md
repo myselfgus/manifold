@@ -32,6 +32,7 @@
   - [5. Export e rendering](#5-export-e-rendering)
 - [Arquitetura de rendering](#arquitetura-de-rendering)
 - [Validações](#validações)
+  - [Fundamentação científica das 15 dimensões](#fundamentação-científica-das-15-dimensões)
   - [Fundamentação científica dos métodos](#fundamentação-científica-dos-métodos)
   - [Validação de software](#validação-de-software)
   - [O que ainda NÃO foi validado](#o-que-ainda-não-foi-validado)
@@ -45,8 +46,12 @@
 
 ## O que é um "manifold VDLP"
 
-Cada sessão clínica é resumida em um **vetor VDLP de 15 dimensões** (afeto,
-ansiedade, ruminação, sono, conexão social, autoeficácia, …). Ao longo do tempo,
+Cada sessão clínica é resumida em um **vetor VDLP de 15 dimensões** — o
+**Espaço Mental ℳ** — com marcadores linguísticos e prosódicos extraídos da fala
+(valência, arousal, coerência narrativa, orientação temporal, densidade de
+autoreferência, agência, prosódia emocional, …; ver
+[a lista completa e sua validação](#fundamentação-científica-das-15-dimensões)).
+Ao longo do tempo,
 as sessões de um paciente **não** se espalham aleatoriamente pelo espaço 15-D:
 elas descrevem uma **trajetória contínua** — o paciente transita suavemente entre
 estados latentes, com deriva e ruído.
@@ -117,11 +122,15 @@ python run_pipeline.py --sessions 180 --grid 192 --out ../data
 
 ### 1. Dados VDLP (15-D)
 
-As 15 dimensões estão em [`dims.py`](python/vdlp_manifold/dims.py) (nomes
-**ilustrativos** — a semântica vem do seu instrumento). O gerador sintético
-[`synth.py`](python/vdlp_manifold/synth.py) é o ponto-chave para *validar* o
-pipeline: ele produz uma **trajetória com estrutura conhecida**, para sabermos
-se o embedding a recupera.
+As 15 dimensões estão em [`dims.py`](python/vdlp_manifold/dims.py), cada uma
+**ancorada em frameworks clínicos e computacionais validados** (RDoC, HiTOP,
+Big5, PANAS, PERMA, WHODAS, modelo Circumplex) e **extraível de linguagem
+natural** — a fundamentação por dimensão está em
+[`docs/VALIDACAO_DIMENSOES_ESPACO_MENTAL.md`](docs/VALIDACAO_DIMENSOES_ESPACO_MENTAL.md)
+e resumida [mais abaixo](#fundamentação-científica-das-15-dimensões). O gerador
+sintético [`synth.py`](python/vdlp_manifold/synth.py) é o ponto-chave para
+*testar* o pipeline: ele produz uma **trajetória com estrutura conhecida**, para
+sabermos se o embedding a recupera.
 
 O paciente sintético atravessa `n_states` centros latentes com:
 
@@ -338,22 +347,58 @@ flowchart TD
 
 ## Validações
 
-Há **três níveis distintos** de validação, e é fundamental não confundi-los.
-Este projeto se apoia em métodos **cientificamente validados na literatura**;
-o **código** que os implementa é coberto por testes; mas a **aplicação clínica
-a dados VDLP reais ainda não foi validada** — por isso todo resultado é
-*hipótese de design, não diagnóstico*.
+Há **quatro camadas distintas** de validação, e é fundamental não confundi-las.
+Tanto as **15 dimensões** quanto os **métodos** do pipeline são
+**cientificamente fundamentados na literatura revisada por pares**; o **código**
+que os implementa é coberto por testes; o que ainda falta é a **validação
+clínica prospectiva do pipeline integrado** sobre dados de pacientes reais —
+por isso, hoje, todo resultado é *hipótese de design, não diagnóstico*.
 
 ```mermaid
 flowchart LR
-    A["<b>1. Fundamentação científica</b><br/>métodos revisados por pares<br/>✅ validados na literatura"]
-    B["<b>2. Validação de software</b><br/>testes do pipeline<br/>✅ código faz o que promete"]
-    C["<b>3. Validação clínica</b><br/>em dados VDLP reais<br/>❌ ainda NÃO realizada"]
-    A --> B --> C
+    A["<b>1. Dimensões (construto)</b><br/>15-D ancoradas em RDoC/HiTOP/<br/>Big5/PANAS/PERMA/WHODAS<br/>✅ validadas na literatura"]
+    B["<b>2. Métodos</b><br/>PHATE, KDE, watershed…<br/>✅ revisados por pares"]
+    C["<b>3. Software</b><br/>testes do pipeline<br/>✅ implementação correta"]
+    D["<b>4. Clínica prospectiva</b><br/>pipeline integrado em<br/>pacientes reais<br/>🔄 fase seguinte"]
+    A --> B --> C --> D
     style A fill:#0d2818,stroke:#3fb950,color:#e6edf3
-    style B fill:#12233a,stroke:#58a6ff,color:#e6edf3
-    style C fill:#3a1416,stroke:#f85149,color:#e6edf3
+    style B fill:#0d2818,stroke:#3fb950,color:#e6edf3
+    style C fill:#12233a,stroke:#58a6ff,color:#e6edf3
+    style D fill:#3a2d0b,stroke:#d29922,color:#e6edf3
 ```
+
+### Fundamentação científica das 15 dimensões
+
+As 15 dimensões do Espaço Mental ℳ **não são ilustrativas**: cada uma é um
+construto **validado por frameworks estabelecidos** (RDoC, HiTOP, Big5, PANAS,
+PERMA, WHODAS, modelo Circumplex de Russell), **extraível de linguagem
+natural/fala** por métodos de PLN e análise prosódica, com **métrica matemática
+definida** e **literatura de suporte**. A fundamentação completa — frameworks,
+método de extração, fórmula e referências por dimensão — está em
+[`docs/VALIDACAO_DIMENSOES_ESPACO_MENTAL.md`](docs/VALIDACAO_DIMENSOES_ESPACO_MENTAL.md).
+
+| # | Dimensão | Meta | Frameworks | Status |
+|---|----------|------|------------|--------|
+| v1 | Valência Emocional | afetiva | RDoC, Circumplex, PANAS, Big5 | ✅ |
+| v2 | Arousal / Ativação | afetiva | RDoC, Circumplex, PANAS, HiTOP | ✅ |
+| v3 | Coerência Narrativa | afetiva | RDoC, HiTOP, DSM-5 | ✅ |
+| v4 | Complexidade Sintática | afetiva | RDoC, Big5, WHODAS | ✅ |
+| v5 | Orientação Temporal | cognitiva | HiTOP, CBT, PERMA | ✅ |
+| v6 | Densidade de Autoreferência | cognitiva | RDoC, Big5, HiTOP, DSM-5 | ✅ |
+| v7 | Linguagem Social | cognitiva | RDoC, PERMA, WHODAS, Big5 | ✅ |
+| v8 | Flexibilidade Discursiva | cognitiva | RDoC, Big5, HiTOP | ✅ |
+| v9 | Dominância / Agência | agência | RDoC, Circumplex, PERMA, WHODAS | ✅ |
+| v10 | Fragmentação do Discurso | agência | HiTOP, DSM-5 | ✅ |
+| v11 | Densidade Semântica | agência | RDoC, Big5, Dementia | ✅ |
+| v12 | Marcadores de Certeza/Incerteza | agência | Big5, HiTOP, Metacognition | ✅ |
+| v13 | Padrões de Conectividade | agência | RDoC, Big5, WHODAS | ✅ |
+| v14 | Comunicação Pragmática | agência | RDoC, DSM-5, Big5 | ⚠️ parcial |
+| v15 | Prosódia Emocional | agência | RDoC, Circumplex, Affective Computing | ✅ |
+
+> **14 de 15 dimensões** têm validação de construto completa; a v14 (pragmática)
+> é parcial — dependente de contexto e mais difícil de computar. Os
+> identificadores e metadados vivem em [`dims.py`](python/vdlp_manifold/dims.py)
+> (`VDLP_DIMENSIONS`), alinhados a este documento.
 
 ### Fundamentação científica dos métodos
 
@@ -407,24 +452,30 @@ validação sobre **dados sintéticos**, não sobre pacientes reais.
 
 ### O que ainda NÃO foi validado
 
-Para ser honesto sobre o alcance científico deste projeto:
+Ser honesto sobre o alcance também significa separar o que **já** está
+fundamentado do que **ainda** precisa de estudo próprio:
 
-- **Não há validação clínica.** Nenhum estudo com pacientes reais estabeleceu
-  que as bacias, fluxos ou geodésicas do manifold correspondem a construtos
-  clínicos significativos, nem que têm valor prognóstico ou diagnóstico.
-- **Não há validação do instrumento VDLP** aqui: as 15 dimensões em
-  [`dims.py`](python/vdlp_manifold/dims.py) são **ilustrativas**; a validade
-  psicométrica (confiabilidade, validade de construto) vem do seu instrumento,
-  não deste pacote.
-- **Os dados de exemplo são sintéticos** — servem para testar o software e
+- **Falta validação clínica prospectiva do pipeline integrado.** As dimensões e
+  os métodos são validados isoladamente na literatura, mas ainda não há estudo
+  com pacientes reais estabelecendo que as **bacias, fluxos e geodésicas do
+  manifold** correspondem a construtos clínicos com valor prognóstico ou
+  diagnóstico. É a fase seguinte do roadmap de validação (ver
+  [`docs/VALIDACAO_DIMENSOES_ESPACO_MENTAL.md`](docs/VALIDACAO_DIMENSOES_ESPACO_MENTAL.md),
+  Fase 3: testes empíricos, teste-reteste, validade preditiva).
+- **v14 (Comunicação Pragmática) é parcial** — depende de contexto e requer
+  modelos mais sofisticados; as demais 14 dimensões têm validação de construto completa.
+- **Validação cross-cultural pendente** — a maior parte da literatura de extração
+  é em inglês; extração e limiares em português precisam de calibração própria.
+- **Os dados de exemplo aqui são sintéticos** — servem para testar o software e
   demonstrar as propriedades dos métodos, não para inferir nada clínico.
 - A **incerteza** é reportada em todo artefato (preview, HUD web, `.npz`) para
   que nunca se leia o manifold sem ver o nível de confiança — mas incerteza
   reportada **não substitui** validação clínica prospectiva.
 
-> Em resumo: os **métodos** são cientificamente validados; a **implementação** é
-> testada; a **aplicação a VDLP clínico** é uma hipótese de design a ser
-> validada em estudo próprio. Todo drill-down reancora na **fala literal do
+> Em resumo: as **15 dimensões** e os **métodos** são cientificamente
+> fundamentados; a **implementação** é testada; a **validação clínica
+> prospectiva do pipeline integrado** é a fase seguinte. Enquanto isso, todo
+> resultado é hipótese de design e todo drill-down reancora na **fala literal do
 > paciente (ASL)**.
 
 ---
@@ -506,7 +557,7 @@ cd python && python run_pipeline.py --input meus_vdlp.npy --grid 192 --out ../da
 vdlp-manifold/
 ├── python/
 │   ├── vdlp_manifold/        # pacote
-│   │   ├── dims.py           # as 15 dimensões VDLP (ilustrativas)
+│   │   ├── dims.py           # as 15 dimensões do Espaço Mental ℳ (validadas)
 │   │   ├── synth.py          # gerador de sessões sintéticas com trajetória
 │   │   ├── embed.py          # PHATE > UMAP(PCA-init) > PCA + guard-rail
 │   │   ├── heightfield.py    # KDE gaussiano separável (→ MPS/vDSP on-device)
@@ -520,7 +571,9 @@ vdlp-manifold/
 ├── apple/
 │   └── VDLPManifoldMesh.swift # RealityKit LowLevelMesh, update in-place
 ├── tests/                    # pytest de fumaça
-├── docs/images/              # previews
+├── docs/
+│   ├── VALIDACAO_DIMENSOES_ESPACO_MENTAL.md  # validação científica das 15-D
+│   └── images/               # previews
 ├── requirements.txt · pyproject.toml · Makefile
 ```
 

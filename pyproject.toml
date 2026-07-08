@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vdlp-manifold"
+version = "0.1.0"
+description = "Visualização de manifolds para vetores VDLP (15-D) de saúde mental — hipóteses de design, não diagnóstico."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "scikit-image>=0.21",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+manifold = ["phate>=1.0", "umap-learn>=0.5"]
+dev = ["pytest>=7.0", "ruff>=0.1"]
+
+[project.scripts]
+vdlp-manifold = "vdlp_manifold.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

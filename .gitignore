@@ -1,0 +1,26 @@
+# Artefatos gerados
+data/
+*.npz
+*.png
+!docs/images/*.png
+manifold_data.json
+*.html
+!web/template_webgpu.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / web vendor (não versionar dependências de CDN baixadas p/ teste)
+node_modules/
+web/vendor/
+
+# SO / editor
+.DS_Store
+.idea/
+.vscode/
